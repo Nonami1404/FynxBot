@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import threading
+from flask import Flask
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
@@ -21,17 +24,28 @@ ADMIN_ID = 1347186841
 GROUP_ID = -1003055132178
 
 # ==========================
+# Flask часть (для UptimeRobot)
+# ==========================
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "✅ Бот Fynx работает 24/7!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# ==========================
 # Логирование
 # ==========================
 logging.basicConfig(level=logging.INFO)
 
 # ==========================
-# Инициализация
+# Инициализация Aiogram
 # ==========================
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Хранилище заявок
 clients_data = {}
 
 # ==========================
@@ -42,7 +56,7 @@ class OrderForm(StatesGroup):
     choosing_subservice = State()
     describing_product = State()
     leaving_contact = State()
-    typing_contact = State()  # новое состояние для ввода контакта
+    typing_contact = State()
 
 # ==========================
 # Клавиатуры
@@ -86,9 +100,7 @@ support_menu = ReplyKeyboardMarkup(
 )
 
 back_only = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🔙 Назад")]
-    ],
+    keyboard=[[KeyboardButton(text="🔙 Назад")]],
     resize_keyboard=True
 )
 
@@ -102,7 +114,7 @@ contact_menu = ReplyKeyboardMarkup(
 )
 
 # ==========================
-# Хендлеры
+# Хендлеры Aiogram
 # ==========================
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -119,7 +131,6 @@ async def cmd_start(message: Message, state: FSMContext):
         parse_mode="Markdown"
     )
 
-# ---------- Выбор услуги ----------
 @dp.message(OrderForm.choosing_service)
 async def choose_service(message: Message, state: FSMContext):
     text = message.text
@@ -138,7 +149,6 @@ async def choose_service(message: Message, state: FSMContext):
     else:
         await message.answer("Пожалуйста, используйте кнопки ниже 👇", reply_markup=main_menu)
 
-# ---------- Подуслуга ----------
 @dp.message(OrderForm.choosing_subservice)
 async def choose_subservice(message: Message, state: FSMContext):
     if message.text == "🔙 Назад":
@@ -149,7 +159,6 @@ async def choose_subservice(message: Message, state: FSMContext):
     await state.set_state(OrderForm.describing_product)
     await message.answer("Опишите ваш продукт или задачу подробнее ✍️", reply_markup=back_only)
 
-# ---------- Описание продукта ----------
 @dp.message(OrderForm.describing_product)
 async def describe_product(message: Message, state: FSMContext):
     if message.text == "🔙 Назад":
@@ -170,7 +179,6 @@ async def describe_product(message: Message, state: FSMContext):
         reply_markup=contact_menu
     )
 
-# ---------- Контакты ----------
 @dp.message(OrderForm.leaving_contact)
 async def leaving_contact_handler(message: Message, state: FSMContext):
     if message.text == "🔙 Назад":
@@ -185,7 +193,6 @@ async def leaving_contact_handler(message: Message, state: FSMContext):
         await message.answer("Напишите ваш номер или ник:")
         return
 
-# ---------- Ввод контакта ----------
 @dp.message(OrderForm.typing_contact)
 async def receive_contact(message: Message, state: FSMContext):
     contact = message.text.strip()
@@ -202,18 +209,15 @@ async def receive_contact(message: Message, state: FSMContext):
     )
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve:{message.from_user.id}"),
-                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject:{message.from_user.id}")
-            ]
-        ]
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve:{message.from_user.id}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject:{message.from_user.id}")
+        ]]
     )
     clients_data[message.from_user.id] = data
     await bot.send_message(ADMIN_ID, text, reply_markup=kb)
     await message.answer("Спасибо! Ваша заявка отправлена администратору ✅")
 
-# ---------- Одобрение/отклонение ----------
 @dp.callback_query(F.data.startswith("approve:"))
 async def approve_client(callback: CallbackQuery):
     user_id = int(callback.data.split(":")[1])
@@ -244,4 +248,8 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    # Запуск Flask в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    # Запуск Telegram-бота
     asyncio.run(main())
