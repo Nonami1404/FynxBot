@@ -33,7 +33,9 @@ def home():
     return "✅ Бот Fynx работает 24/7!"
 
 def run_flask():
-    app.run(host="0.0.0.0", port=8080)
+    import os
+    port = int(os.environ.get("PORT", 8080))  # Берём порт из окружения
+    app.run(host="0.0.0.0", port=port)
 
 # ==========================
 # Логирование
